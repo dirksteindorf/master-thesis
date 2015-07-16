@@ -37,8 +37,8 @@
  */
 
 /**
- * @file MiraAdapter.cpp
- *    An adapter for messages between ROS and MIRA.
+ * @file ros_to_mira.cpp
+ *    an adapter that transforms and publishes OccupancyGrids from ROS to MIRA
  *
  * @author Dirk Steindorf
  * @date   2015/07/14
@@ -59,7 +59,7 @@
 using std::cout;
 using std::endl;
 
-using namespace mira::maps;
+using mira::maps::GridMap;
 
 //-----------------------------------------------------------------------------
 // constants
@@ -87,18 +87,15 @@ mira::Channel<GridMap<uint8>> ros_grid_to_mira;
 // MIRA: occupancy values in [0,254] and unknown (uninitialized) is 255
 void onNewMap(const nav_msgs::OccupancyGrid::ConstPtr& msg)
 {
-    unsigned int width = static_cast<unsigned int>(msg->info.width);
-    unsigned int height = static_cast<unsigned int>(msg->info.height);
+    unsigned int width  = msg->info.width;
+    unsigned int height = msg->info.height;
 
     // create Image for GridMap
-    // http://www.mira-project.org/MIRA-doc/classmira_1_1Img.html#ad2d56a3b4dd08c1350d629d47b4881b2
     mira::Img<uint8> tmp_img(width, height);
 
     // fill image with data from msg->data
-    // http://www.mira-project.org/MIRA-doc/classmira_1_1ImgTypedBase.html#a89da19eb2bcb0ecb1f04bda7161d8f64
     unsigned int pixel_index = 0;
 
-    // TODO: check if "tmp_img(x,y) = int_value" works or if the Pixel-class is needed
     for(unsigned int y=0; y<height; y++){
         for(unsigned int x=0; x<width; x++){
             if(msg->data[pixel_index] == ROS_UNKNOWN){
@@ -122,13 +119,11 @@ void onNewMap(const nav_msgs::OccupancyGrid::ConstPtr& msg)
     }
 
     // create GridMap
-    // http://www.mira-project.org/MIRA-doc/toolboxes/Mapping/classmira_1_1maps_1_1GridMap.html#afce7b1f55777a406dfd873c59e78f294
-
     // TODO: check if the conversion from position.x (float) to Point2i works as wanted
     GridMap<uint8> tmp_map( tmp_img, 
-            msg->info.resolution, 
-            mira::Point2i(  msg->info.origin.position.x, 
-                msg->info.origin.position.y));
+                            msg->info.resolution, 
+                            mira::Point2i(  msg->info.origin.position.x, 
+                                            msg->info.origin.position.y));
 
     // publish map to MIRA
     ros_grid_to_mira.post(tmp_map);
