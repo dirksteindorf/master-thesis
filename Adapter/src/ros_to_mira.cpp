@@ -120,15 +120,15 @@ void onNewMap(const nav_msgs::OccupancyGrid::ConstPtr& msg)
             ++pixel_index;
         }
     }
-    
+
     // create GridMap
     // http://www.mira-project.org/MIRA-doc/toolboxes/Mapping/classmira_1_1maps_1_1GridMap.html#afce7b1f55777a406dfd873c59e78f294
 
     // TODO: check if the conversion from position.x (float) to Point2i works as wanted
     GridMap<uint8> tmp_map( tmp_img, 
-                            msg->info.resolution, 
-                            mira::Point2i(  msg->info.origin.position.x, 
-                            msg->info.origin.position.y));
+            msg->info.resolution, 
+            mira::Point2i(  msg->info.origin.position.x, 
+                msg->info.origin.position.y));
 
     // publish map to MIRA
     ros_grid_to_mira.post(tmp_map);
@@ -142,17 +142,17 @@ int main(int argc, char **argv)
     //--------------------------------------------------------------------------
     // initialize ROS and MIRA
 
-	// ros init
-	ros::init(argc, argv, "Grid2Mira");
+    // ros init
+    ros::init(argc, argv, "Grid2Mira");
 
-	// create and start the mira framework
-	mira::Framework framework(argc, argv, true);
+    // create and start the mira framework
+    mira::Framework framework(argc, argv, true);
 
     //--------------------------------------------------------------------------
     // MIRA Channels
 
-	// create mira authority and publish the channels
-	authority.checkin("/", "Grid2Mira");
+    // create mira authority and publish the channels
+    authority.checkin("/", "Grid2Mira");
     authority.start();
 
     // publish map from ROS, adapted to the value range of MIRA
@@ -160,12 +160,12 @@ int main(int argc, char **argv)
 
     //--------------------------------------------------------------------------
     // ROS nodes
-    
-	// subscriber
-	ros::NodeHandle node_handle;
+
+    // subscriber
+    ros::NodeHandle node_handle;
     ros::Subscriber sub = node_handle.subscribe("map", 1000, onNewMap);
 
-	// do the locomotion
-	ros::spin();
-	return 0;
+    // do the locomotion
+    ros::spin();
+    return 0;
 }
