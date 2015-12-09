@@ -126,7 +126,12 @@ void onNewMap(const nav_msgs::OccupancyGrid::ConstPtr& msg)
                                             msg->info.origin.position.y));
 
     // publish map to MIRA
-    ros_grid_to_mira.post(tmp_map);
+    //ros_grid_to_mira.post(tmp_map);
+    mira::ChannelWrite<GridMap<uint8>> writeSensorMap = ros_grid_to_mira.write();
+
+    writeSensorMap->timestamp = mira::Time::now();
+    writeSensorMap->frameID   = authority.resolveName("GlobalFrame");
+    writeSensorMap->value()   = tmp_map;
 }
 
 
