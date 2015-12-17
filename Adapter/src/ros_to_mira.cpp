@@ -54,12 +54,14 @@
 #include <fw/ChannelReadWrite.h>
 #include <platform/Types.h>
 #include <maps/GridMap.h>
+#include <maps/OccupancyGrid.h>
 #include <image/Img.h>
 
 using std::cout;
 using std::endl;
 
 using mira::maps::GridMap;
+using mira::maps::OccupancyGrid;
 
 //-----------------------------------------------------------------------------
 // constants
@@ -78,7 +80,7 @@ mira::Authority authority;
 
 // channel for publishing a ROS OccupancyGrid to MIRA
 mira::Channel<GridMap<uint8>> ros_grid_to_mira;
-
+//mira::Channel<OccupancyGrid> staticMapChannel;
 
 //------------------------------------------------------------------------------
 // callback for publishing a new map to MIRA
@@ -127,13 +129,14 @@ void onNewMap(const nav_msgs::OccupancyGrid::ConstPtr& msg)
 
     // publish map to MIRA
     //ros_grid_to_mira.post(tmp_map);
+    //auto readMap = staticMapChannel.read();
+    //cout << readMap->frameID << endl;
     mira::ChannelWrite<GridMap<uint8>> writeSensorMap = ros_grid_to_mira.write();
 
     writeSensorMap->timestamp = mira::Time::now();
     writeSensorMap->frameID   = authority.resolveName("GlobalFrame");
     writeSensorMap->value()   = tmp_map;
 }
-
 
 //------------------------------------------------------------------------------
 // prepare the two middlewares and hand over to ROS
@@ -155,8 +158,10 @@ int main(int argc, char **argv)
     authority.checkin("/", "Grid2Mira");
     authority.start();
 
+    //staticMapChannel = authority.subscribe<OccupancyGrid>("/maps/static/Map");
+
     // publish map from ROS, adapted to the value range of MIRA
-    ros_grid_to_mira = authority.publish<GridMap<uint8>>("sensorMap");
+    ros_grid_to_mira = authority.publish<GridMap<uint8>>("aseiaMap");
 
     //--------------------------------------------------------------------------
     // ROS nodes
