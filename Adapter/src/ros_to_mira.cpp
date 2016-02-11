@@ -69,9 +69,9 @@ const int8 ROS_UNKNOWN              = -1;
 const int8 ROS_FREE_THRESHOLD       = 20;
 const int8 ROS_OCCUPIED_THRESHOLD   = 65; 
 
-const unsigned int MIRA_FREE        = 0;
-const unsigned int MIRA_OCCUPIED    = 254;
-const unsigned int MIRA_UNKNOWN     = 130; // I guessed this value
+const unsigned int MIRA_FREE        = 34;
+const unsigned int MIRA_OCCUPIED    = 220;
+const unsigned int MIRA_UNKNOWN     = 127; // I guessed this value
 
 
 //-----------------------------------------------------------------------------
@@ -134,7 +134,7 @@ void onNewMap(const nav_msgs::OccupancyGrid::ConstPtr& msg)
     mira::ChannelWrite<GridMap<uint8>> writeSensorMap = ros_grid_to_mira.write();
 
     writeSensorMap->timestamp = mira::Time::now();
-    writeSensorMap->frameID   = authority.resolveName("GlobalFrame");
+    writeSensorMap->frameID   = authority.resolveName("MapFrame");
     writeSensorMap->value()   = tmp_map;
 }
 
