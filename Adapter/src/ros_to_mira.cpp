@@ -47,31 +47,21 @@
 #include <algorithm>
 #include <ros/ros.h>
 #include <std_msgs/String.h>
-#include <nav_msgs/OccupancyGrid.h>
+#include <nav_msgs/Odometry.h>
 #include <geometry_msgs/Pose.h>
+#include <geometry_msgs/Twist.h>
+#include <sensor_msgs/LaserScan.h>
 
 #include <fw/Framework.h>
 #include <fw/ChannelReadWrite.h>
 #include <platform/Types.h>
-#include <maps/GridMap.h>
-#include <maps/OccupancyGrid.h>
-#include <image/Img.h>
+#include <transform/Pose.h>
+#include <transform/Velocity.h>
+#include <robot/RangeScan.h>
 
-using std::cout;
-using std::endl;
+using namespace std;
+using namespace mira;
 
-using mira::maps::GridMap;
-using mira::maps::OccupancyGrid;
-
-//-----------------------------------------------------------------------------
-// constants
-const int8 ROS_UNKNOWN              = -1;
-const int8 ROS_FREE_THRESHOLD       = 20;
-const int8 ROS_OCCUPIED_THRESHOLD   = 65; 
-
-const unsigned int MIRA_FREE        = 34;
-const unsigned int MIRA_OCCUPIED    = 220;
-const unsigned int MIRA_UNKNOWN     = 127; // I guessed this value
 
 
 //-----------------------------------------------------------------------------
@@ -79,98 +69,86 @@ const unsigned int MIRA_UNKNOWN     = 127; // I guessed this value
 mira::Authority authority; 
 
 // channel for publishing a ROS OccupancyGrid to MIRA
-mira::Channel<GridMap<uint8>> ros_grid_to_mira;
-//mira::Channel<OccupancyGrid> staticMapChannel;
+//mira::Channel<GridMap<uint8>> ros_grid_to_mira;
 
-//------------------------------------------------------------------------------
-// callback for publishing a new map to MIRA
+//-----------------------------------------------------------------------------
+// ROS-specific stuff
+ros::Publisher scitosOdometryPub;
+ros::Publisher scitosLaserPub;
 
-// ROS: occupancy probablities in [0,100] and unknown is -1
-// MIRA: occupancy values in [0,254] and unknown (uninitialized) is 255
-void onNewMap(const nav_msgs::OccupancyGrid::ConstPtr& msg)
+
+// callback for sending odometry to ROS
+void onNewOdometry(mira::ChannelRead<mira::Pose2> data)
 {
-    unsigned int width  = msg->info.width;
-    unsigned int height = msg->info.height;
+    nav_msgs::Odometry msg;
+    mira::Pose2 pose = data->value();
 
-    // create Image for GridMap
-    mira::Img<uint8> tmp_img(width, height);
+    msg.header.stamp = ros::Time::now();
+    msg.header.frame_id = "odometry_frame";
 
-    // fill image with data from msg->data
-    unsigned int pixel_index = 0;
-
-    for(unsigned int y=0; y<height; y++){
-        for(unsigned int x=0; x<width; x++){
-            if(msg->data[pixel_index] == ROS_UNKNOWN){
-                tmp_img(x,y) = MIRA_UNKNOWN; 
-            }
-            else if(msg->data[pixel_index] <= ROS_FREE_THRESHOLD){
-                tmp_img(x,y) = MIRA_FREE;
-            }
-            else if(msg->data[pixel_index] >= ROS_OCCUPIED_THRESHOLD){
-                tmp_img(x,y) = MIRA_OCCUPIED;
-            }
-            else{ 
-                // not really necessary in this scenario,
-                // but discarding this case would lead to a big hole between
-                //  ROS_FREE_THRESHOLD and ROS_OCCUPIED_THRESHOLD
-                tmp_img(x,y) = MIRA_UNKNOWN;
-            }
-
-            ++pixel_index;
-        }
-    }
-
-    // create GridMap
-    // TODO: check if the conversion from position.x (float) to Point2i works as wanted
-    GridMap<uint8> tmp_map( tmp_img, 
-                            msg->info.resolution, 
-                            mira::Point2i(  msg->info.origin.position.x, 
-                                            msg->info.origin.position.y));
-
-    // publish map to MIRA
-    //ros_grid_to_mira.post(tmp_map);
-    //auto readMap = staticMapChannel.read();
-    //cout << readMap->frameID << endl;
-    mira::ChannelWrite<GridMap<uint8>> writeSensorMap = ros_grid_to_mira.write();
-
-    writeSensorMap->timestamp = mira::Time::now();
-    writeSensorMap->frameID   = authority.resolveName("MapFrame");
-    writeSensorMap->value()   = tmp_map;
+    msg.pose.pose.position.x = (float)pose.x();
+    msg.pose.pose.position.y = (float)pose.y();
+    msg.twist.twist.angular.x = (float)pose.phi();
+    
+    scitosOdometryPub.publish(msg);
 }
 
-//------------------------------------------------------------------------------
-// prepare the two middlewares and hand over to ROS
+// callback for sending laserscanner data to ROS
+
+void onNewLaser(mira::ChannelRead<robot::RangeScan> data)
+{
+    sensor_msgs::LaserScan msg;
+    robot::RangeScan rangeScan = data->value();
+
+    msg.header.stamp.sec = ros::Time::now();
+    msg.header.frame_id = "sick_frame";
+
+    msg.angle_min = 0.0;
+    msg.angle_max = 270.0;
+    msg.angle_increment = 0.5;
+
+    msg.scan_time = (float) rangeScan.scanTime.seconds();
+
+    msg.range_min = 0.0;
+    msg.range_max = 2.0;
+
+    msg.ranges = rangeScan.range;
+
+    scitosLaserPub.publish(msg);
+}
+
+
+// callback for velocity commands to the SCITOS
+void vel_callback(const geometry_msgs::Twist::ConstPtr& msg)
+{
+    authority.callService<void>("/robot/Robot", "setVelocity", 
+        Velocity2(msg->linear.x, 0.0f, msg->angular.x));
+}
+
+
 int main(int argc, char **argv)
 {
-    //--------------------------------------------------------------------------
-    // initialize ROS and MIRA
+    ros::init(argc, argv, "Ros2Mira");
 
-    // ros init
-    ros::init(argc, argv, "Grid2Mira");
-
-    // create and start the mira framework
     mira::Framework framework(argc, argv, true);
 
-    //--------------------------------------------------------------------------
-    // MIRA Channels
-
-    // create mira authority and publish the channels
-    authority.checkin("/", "Grid2Mira");
+    authority.checkin("/", "Ros2Mira");
     authority.start();
 
-    //staticMapChannel = authority.subscribe<OccupancyGrid>("/maps/static/Map");
+    // subscribe to MIRA
+    authority.subscribe<mira::Pose2>("/robot/Odometry", &onNewOdometry);
+    authority.subscribe<robot::RangeScan>("/robot/frontLaser/Laser", &onNewLaser);
 
-    // publish map from ROS, adapted to the value range of MIRA
-    ros_grid_to_mira = authority.publish<GridMap<uint8>>("aseiaMap");
 
-    //--------------------------------------------------------------------------
-    // ROS nodes
+    // ROS publisher
+    ros::NodeHandle pubNode1;
+    ros::NodeHandle pubNode2;
 
-    // subscriber
-    ros::NodeHandle node_handle;
-    ros::Subscriber sub = node_handle.subscribe("map", 1000, onNewMap);
+    scitosOdometryPub = pubNode1.advertise<geometry_msgs::Point>("mira_odometry", 1000);
+    scitosLaserPub = pubNode2.advertise<sensor_msgs::LaserScan>("scan", 1000);
 
-    // do the locomotion
-    ros::spin();
-    return 0;
+    // ROS subscriber
+    ros::NodeHandle subNode1;
+
+    ros::Subscriber subscriber1 = subNode1.subscribe("velocity_cmd", 1000, vel_callback);
 }
