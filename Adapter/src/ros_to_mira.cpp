@@ -48,6 +48,7 @@
 #include <ros/ros.h>
 #include <std_msgs/String.h>
 #include <nav_msgs/Odometry.h>
+#include <tf/transform_broadcaster.h>
 #include <geometry_msgs/Pose.h>
 #include <geometry_msgs/Twist.h>
 #include <sensor_msgs/LaserScan.h>
@@ -58,6 +59,9 @@
 #include <transform/Pose.h>
 #include <transform/Velocity.h>
 #include <robot/RangeScan.h>
+#include <robot/Odometry.h>
+#include <tf/tf.h>
+#include <math.h>
 
 using namespace std;
 using namespace mira;
@@ -76,43 +80,67 @@ mira::Authority authority;
 ros::Publisher scitosOdometryPub;
 ros::Publisher scitosLaserPub;
 
-
 // callback for sending odometry to ROS
-void onNewOdometry(mira::ChannelRead<mira::Pose2> data)
-{
+void onNewOdometry(mira::ChannelRead<robot::Odometry<2>> data)
+{    
+    //ROS_INFO_STREAM("Odom");
     nav_msgs::Odometry msg;
-    mira::Pose2 pose = data->value();
+    robot::Odometry<2> odom = data->value();
 
-    msg.header.stamp = ros::Time::now();
-    msg.header.frame_id = "odometry_frame";
+    msg.header.stamp = ros::Time((double)data.getTimestamp().toUnixNS()/1000000000.0);
+    //ROS_INFO("%.9f",msg.header.stamp.toSec());
+    msg.header.frame_id = "/odom";
+    msg.child_frame_id = "/base_footprint";
+    
+    tf::Quaternion q;
+    q.setRPY(0, 0, odom.pose.phi());
 
-    msg.pose.pose.position.x = (float)pose.x();
-    msg.pose.pose.position.y = (float)pose.y();
-    msg.twist.twist.angular.x = (float)pose.phi();
+    msg.pose.pose.position.x = (float)odom.pose.x();
+    msg.pose.pose.position.y = (float)odom.pose.y();
+    msg.pose.pose.orientation.x = q.x();
+    msg.pose.pose.orientation.y = q.y();
+    msg.pose.pose.orientation.z = q.z();
+    msg.pose.pose.orientation.w = q.w();
+    
+    msg.twist.twist.linear.x = odom.velocity.x();
+    msg.twist.twist.angular.z = odom.velocity.phi();   
     
     scitosOdometryPub.publish(msg);
+    
+    //sending tf-frame
+    static tf::TransformBroadcaster br;
+    tf::Transform transform;
+    transform.setOrigin( tf::Vector3(odom.pose.x(), odom.pose.y(), 0.0) );
+    transform.setRotation(q);
+    br.sendTransform(tf::StampedTransform(transform, msg.header.stamp, "/odom", "/base_footprint"));
 }
 
 // callback for sending laserscanner data to ROS
 
 void onNewLaser(mira::ChannelRead<robot::RangeScan> data)
 {
+    //ROS_INFO_STREAM("Laser");
     sensor_msgs::LaserScan msg;
     robot::RangeScan rangeScan = data->value();
+    std::vector<float> scan;
+    
+    for(int i=41; i<498; i++){
+        scan.push_back(rangeScan.range[i]);
+    }
 
-    msg.header.stamp.sec = ros::Time::now();
-    msg.header.frame_id = "sick_frame";
+    msg.header.stamp = ros::Time((double)data.getTimestamp().toUnixNS()/1000000000.0);
+    msg.header.frame_id = "/sick_frame";
 
-    msg.angle_min = 0.0;
-    msg.angle_max = 270.0;
-    msg.angle_increment = 0.5;
+    msg.angle_min = -114.5/180 * M_PI;
+    msg.angle_max = 114.5/180 * M_PI;
+    msg.angle_increment = 0.5/180 * M_PI;
 
     msg.scan_time = (float) rangeScan.scanTime.seconds();
 
-    msg.range_min = 0.0;
+    msg.range_min = 0.2;
     msg.range_max = 2.0;
 
-    msg.ranges = rangeScan.range;
+    msg.ranges = scan;
 
     scitosLaserPub.publish(msg);
 }
@@ -122,7 +150,7 @@ void onNewLaser(mira::ChannelRead<robot::RangeScan> data)
 void vel_callback(const geometry_msgs::Twist::ConstPtr& msg)
 {
     authority.callService<void>("/robot/Robot", "setVelocity", 
-        Velocity2(msg->linear.x, 0.0f, msg->angular.x));
+        Velocity2(msg->linear.x, 0.0f, msg->angular.z));
 }
 
 
@@ -136,7 +164,7 @@ int main(int argc, char **argv)
     authority.start();
 
     // subscribe to MIRA
-    authority.subscribe<mira::Pose2>("/robot/Odometry", &onNewOdometry);
+    authority.subscribe<robot::Odometry<2>>("/robot/Odometry", &onNewOdometry);
     authority.subscribe<robot::RangeScan>("/robot/frontLaser/Laser", &onNewLaser);
 
 
@@ -144,11 +172,15 @@ int main(int argc, char **argv)
     ros::NodeHandle pubNode1;
     ros::NodeHandle pubNode2;
 
-    scitosOdometryPub = pubNode1.advertise<geometry_msgs::Point>("mira_odometry", 1000);
-    scitosLaserPub = pubNode2.advertise<sensor_msgs::LaserScan>("scan", 1000);
+    scitosOdometryPub = pubNode1.advertise<nav_msgs::Odometry>("odom", 10);
+    scitosLaserPub = pubNode2.advertise<sensor_msgs::LaserScan>("scan", 10);
 
     // ROS subscriber
     ros::NodeHandle subNode1;
 
-    ros::Subscriber subscriber1 = subNode1.subscribe("velocity_cmd", 1000, vel_callback);
+    ros::Subscriber subscriber1 = subNode1.subscribe("cmd_vel", 1, vel_callback);
+
+    ros::spin();
+
+    return 0;
 }
