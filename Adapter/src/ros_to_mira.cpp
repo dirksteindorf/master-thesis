@@ -66,7 +66,8 @@
 using namespace std;
 using namespace mira;
 
-
+float linear_velocity = 0.0f;
+float angular_velocity = 0.0f;
 
 //-----------------------------------------------------------------------------
 // MIRA-specific stuff
@@ -79,6 +80,13 @@ mira::Authority authority;
 // ROS-specific stuff
 ros::Publisher scitosOdometryPub;
 ros::Publisher scitosLaserPub;
+
+
+void send_velocity(const Timer& timer)
+{
+    authority.callService<void>("/robot/Robot", "setVelocity", 
+        Velocity2(linear_velocity, 0.0f, angular_velocity));
+}
 
 // callback for sending odometry to ROS
 void onNewOdometry(mira::ChannelRead<robot::Odometry<2>> data)
@@ -149,8 +157,10 @@ void onNewLaser(mira::ChannelRead<robot::RangeScan> data)
 // callback for velocity commands to the SCITOS
 void vel_callback(const geometry_msgs::Twist::ConstPtr& msg)
 {
-    authority.callService<void>("/robot/Robot", "setVelocity", 
-        Velocity2(msg->linear.x, 0.0f, msg->angular.z));
+    //authority.callService<void>("/robot/Robot", "setVelocity", 
+    //    Velocity2(msg->linear.x, 0.0f, msg->angular.z));
+    linear_velocity = msg->linear.x;
+    angular_velocity = msg->angular.z;
 }
 
 
@@ -161,6 +171,7 @@ int main(int argc, char **argv)
     mira::Framework framework(argc, argv, true);
 
     authority.checkin("/", "Ros2Mira");
+    authority.createTimer(Duration::milliseconds(100), &send_velocity);
     authority.start();
 
     // subscribe to MIRA
