@@ -84,6 +84,7 @@ ros::Publisher scitosLaserPub;
 
 void send_velocity(const Timer& timer)
 {
+    std::cout << "(linear, angular) = (" << linear_velocity << ", " << angular_velocity << ")" << endl;
     authority.callService<void>("/robot/Robot", "setVelocity", 
         Velocity2(linear_velocity, 0.0f, angular_velocity));
 }
